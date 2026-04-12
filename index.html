@@ -818,7 +818,7 @@
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyA5kv2G-KOYShg3dGxMvm50mpWUsTT9cHprXiiSjOwjR4n830JHr-4arGD_rn-B1Ik/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzbhIj806GrPDFcOjOlB97qdK3GwIylM_lV1HHE1nWJSpRtwLqMy_EJERfkHZnZTP1VOQ/exec';
 const DRIVE_FOLDER = 'https://drive.google.com/drive/folders/1jRcBD1xTyifIfS83VusqKC8J1ZYcv3Iw';
 
 // ── DEFAULT DATES ─────────────────────────────────────────────────────────────
@@ -954,19 +954,23 @@ async function loadData() {
     const res  = await fetch(SCRIPT_URL + '?action=load');
     const json = await res.json();
     if (json.ok) {
-      state      = json.data.state      || {};
-      structure  = json.data.structure  || [];
-      if (json.data.eventDates) {
+      state     = json.data.state     || {};
+      structure = json.data.structure || [];
+      // Only load eventDates from server if it has real data
+      if (json.data.eventDates && json.data.eventDates.tunang && json.data.eventDates.kahwin) {
         eventDates = json.data.eventDates;
       }
     }
   } catch (e) {
+    // Fallback to localStorage if fetch fails
     const saved = localStorage.getItem('weddingApp');
     if (saved) {
       const parsed = JSON.parse(saved);
-      state      = parsed.state      || {};
-      structure  = parsed.structure  || [];
-      if (parsed.eventDates) eventDates = parsed.eventDates;
+      state     = parsed.state     || {};
+      structure = parsed.structure || [];
+      if (parsed.eventDates && parsed.eventDates.tunang) {
+        eventDates = parsed.eventDates;
+      }
     }
   }
   if (!structure || structure.length === 0) {
