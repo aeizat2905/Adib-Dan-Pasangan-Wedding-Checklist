@@ -782,7 +782,7 @@
 
 <!-- DATE EDIT MODAL -->
 <div id="dateModal" style="display:none">
-  <div class="modal-overlay" onclick="closeDateModal(event)">
+  <div class="modal-overlay" id="modalOverlay">
     <div class="modal-box">
       <button class="modal-close" onclick="closeDateModal()">✕</button>
       <div class="modal-title" id="modalTitle">Tukar Tarikh</div>
@@ -792,7 +792,7 @@
       <div class="modal-field">
         <label class="modal-field-label" id="modalFieldLabel">Tarikh Majlis</label>
         <span class="modal-field-sub">Pilih tarikh menggunakan pemilih di bawah:</span>
-        <input type="date" class="modal-input" id="modalDateInput">
+        <input type="date" class="modal-input" id="modalDateInput" oninput="updateModalDisplay()">
         <div class="modal-input-display" id="modalDateDisplay"></div>
       </div>
 
@@ -818,8 +818,8 @@
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzbhIj806GrPDFcOjOlB97qdK3GwIylM_lV1HHE1nWJSpRtwLqMy_EJERfkHZnZTP1VOQ/exec';
-const DRIVE_FOLDER = 'https://drive.google.com/drive/folders/1gQP7xO7Fb7wPLykKrdGMTRdT86C9xnHi?usp=drive_link';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyA5kv2G-KOYShg3dGxMvm50mpWUsTT9cHprXiiSjOwjR4n830JHr-4arGD_rn-B1Ik/exec';
+const DRIVE_FOLDER = 'https://drive.google.com/drive/folders/1jRcBD1xTyifIfS83VusqKC8J1ZYcv3Iw';
 
 // ── DEFAULT DATES ─────────────────────────────────────────────────────────────
 const DEFAULT_DATES = {
@@ -1023,8 +1023,8 @@ function openDateModal(target) {
   const isTunang = target === 'tunang';
   const d = eventDates[target];
 
-  document.getElementById('modalTitle').textContent    = isTunang ? '💍 Tarikh Pertunangan' : '🌸 Tarikh Perkahwinan';
-  document.getElementById('modalSubtitle').textContent = isTunang
+  document.getElementById('modalTitle').textContent      = isTunang ? '💍 Tarikh Pertunangan' : '🌸 Tarikh Perkahwinan';
+  document.getElementById('modalSubtitle').textContent   = isTunang
     ? 'Kemas kini tarikh majlis pertunangan anda'
     : 'Kemas kini tarikh majlis perkahwinan anda';
   document.getElementById('modalFieldLabel').textContent = isTunang ? 'Tarikh Pertunangan' : 'Tarikh Perkahwinan';
@@ -1035,12 +1035,16 @@ function openDateModal(target) {
   labelInput.value = d.label || '';
   updateModalDisplay();
 
-  dateInput.addEventListener('input', updateModalDisplay);
+  // Click outside overlay to close
+  document.getElementById('modalOverlay').onclick = function(e) {
+    if (e.target === document.getElementById('modalOverlay')) closeDateModal();
+  };
+
   document.getElementById('dateModal').style.display = 'block';
 }
 
 function updateModalDisplay() {
-  const val = document.getElementById('modalDateInput').value;
+  const val  = document.getElementById('modalDateInput').value;
   const disp = document.getElementById('modalDateDisplay');
   if (val) {
     const dt = new Date(val + 'T00:00:00');
@@ -1050,12 +1054,9 @@ function updateModalDisplay() {
   }
 }
 
-function closeDateModal(e) {
-  if (e && e.target !== document.querySelector('.modal-overlay')) return;
+function closeDateModal() {
   document.getElementById('dateModal').style.display = 'none';
   modalTarget = null;
-  // Remove listener to avoid stacking
-  document.getElementById('modalDateInput').removeEventListener('input', updateModalDisplay);
 }
 
 async function saveDateModal() {
@@ -1064,18 +1065,24 @@ async function saveDateModal() {
 
   if (!isoVal) { showToast('Sila pilih tarikh terlebih dahulu.'); return; }
 
-  eventDates[modalTarget] = {
-    iso:   isoVal,
-    label: labelVal || isoVal,
-  };
+  const newLabel = labelVal || isoVal;
 
-  // Update countdown label immediately
+  eventDates[modalTarget] = { iso: isoVal, label: newLabel };
+
+  // ── Also update matching phase date ──────────────────────────────────────
+  // phase_0 = pertunangan, phase_1 = perkahwinan (by convention: first & second phase)
+  if (modalTarget === 'tunang' && structure[0]) {
+    structure[0].date = newLabel;
+  }
+  if (modalTarget === 'kahwin' && structure[1]) {
+    structure[1].date = newLabel;
+  }
+
+  closeDateModal();
   updateCountdownLabels();
 
-  document.getElementById('dateModal').style.display = 'none';
-  modalTarget = null;
-
   await saveData();
+  renderAll();
   showToast('📅 Tarikh berjaya dikemas kini!');
 }
 
