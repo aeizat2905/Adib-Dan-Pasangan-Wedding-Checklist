@@ -819,7 +819,7 @@
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzbhIj806GrPDFcOjOlB97qdK3GwIylM_lV1HHE1nWJSpRtwLqMy_EJERfkHZnZTP1VOQ/exec';
-const DRIVE_FOLDER = 'https://drive.google.com/drive/folders/1jRcBD1xTyifIfS83VusqKC8J1ZYcv3Iw';
+const DRIVE_FOLDER = 'https://drive.google.com/drive/folders/1gQP7xO7Fb7wPLykKrdGMTRdT86C9xnHi';
 
 // ── DEFAULT DATES ─────────────────────────────────────────────────────────────
 const DEFAULT_DATES = {
@@ -950,31 +950,52 @@ function logout() {
 
 // ── DATA I/O ──────────────────────────────────────────────────────────────────
 async function loadData() {
+  let serverLoaded = false;
+
+  // Step 1: Try Google Sheets (with 8s timeout)
   try {
-    const res  = await fetch(SCRIPT_URL + '?action=load');
-    const json = await res.json();
-    if (json.ok) {
+    const controller = new AbortController();
+    const tid = setTimeout(function() { controller.abort(); }, 8000);
+    const res  = await fetch(SCRIPT_URL + '?action=load', { signal: controller.signal });
+    clearTimeout(tid);
+    const text = await res.text();
+    const json = JSON.parse(text);
+    if (json && json.ok && json.data) {
       state     = json.data.state     || {};
       structure = json.data.structure || [];
-      // Only load eventDates from server if it has real data
       if (json.data.eventDates && json.data.eventDates.tunang && json.data.eventDates.kahwin) {
         eventDates = json.data.eventDates;
       }
+      serverLoaded = true;
+      localStorage.setItem('weddingApp', JSON.stringify({ state: state, structure: structure, eventDates: eventDates }));
     }
   } catch (e) {
-    // Fallback to localStorage if fetch fails
-    const saved = localStorage.getItem('weddingApp');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      state     = parsed.state     || {};
-      structure = parsed.structure || [];
-      if (parsed.eventDates && parsed.eventDates.tunang) {
-        eventDates = parsed.eventDates;
+    console.warn('Server load failed:', e.message || e);
+  }
+
+  // Step 2: If server failed, try localStorage
+  if (!serverLoaded) {
+    try {
+      const saved = localStorage.getItem('weddingApp');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        state     = parsed.state     || {};
+        structure = parsed.structure || [];
+        if (parsed.eventDates && parsed.eventDates.tunang) eventDates = parsed.eventDates;
       }
+    } catch (e) {
+      console.warn('localStorage failed:', e.message || e);
     }
   }
+
+  // Step 3: Always seed structure if still empty
   if (!structure || structure.length === 0) {
     structure = JSON.parse(JSON.stringify(DEFAULT_DATA));
+  }
+
+  // Step 4: Always ensure eventDates is valid
+  if (!eventDates || !eventDates.tunang || !eventDates.kahwin) {
+    eventDates = JSON.parse(JSON.stringify(DEFAULT_DATES));
   }
 }
 
