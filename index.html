@@ -1091,24 +1091,109 @@ async function saveDateModal() {
   if (!isoVal) { showToast('Sila pilih tarikh terlebih dahulu.'); return; }
 
   const newLabel = labelVal || isoVal;
-
   eventDates[modalTarget] = { iso: isoVal, label: newLabel };
 
-  // ── Also update matching phase date ──────────────────────────────────────
-  // phase_0 = pertunangan, phase_1 = perkahwinan (by convention: first & second phase)
-  if (modalTarget === 'tunang' && structure[0]) {
-    structure[0].date = newLabel;
-  }
-  if (modalTarget === 'kahwin' && structure[1]) {
-    structure[1].date = newLabel;
+  // ── Update matching phase date & recalculate period labels ────────────────
+  const phaseIdx = modalTarget === 'tunang' ? 0 : 1;
+  if (structure[phaseIdx]) {
+    structure[phaseIdx].date = newLabel;
+    recalcPeriodLabels(structure[phaseIdx], new Date(isoVal + 'T00:00:00'));
   }
 
   closeDateModal();
   updateCountdownLabels();
-
   await saveData();
   renderAll();
-  showToast('📅 Tarikh berjaya dikemas kini!');
+  showToast('📅 Tarikh & tempoh dikemas kini!');
+}
+
+// ── RECALCULATE PERIOD LABELS ─────────────────────────────────────────────────
+// Malay month names
+const MY_MONTHS = ['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
+
+function myMonth(date) { return MY_MONTHS[date.getMonth()]; }
+function myMonthYear(date) { return MY_MONTHS[date.getMonth()] + ' ' + date.getFullYear(); }
+
+// Add N months to a date (returns new Date)
+function addMonths(date, n) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + n);
+  return d;
+}
+
+// Format a month range e.g. "April – Mei 2026"
+function fmtRange(d1, d2) {
+  if (d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear()) {
+    return myMonthYear(d1);
+  }
+  if (d1.getFullYear() === d2.getFullYear()) {
+    return myMonth(d1) + ' – ' + myMonthYear(d2);
+  }
+  return myMonthYear(d1) + ' – ' + myMonthYear(d2);
+}
+
+// Detect how many months before event a period label refers to
+// Returns { monthsBefore, rangeMonths } or null if can't detect
+function detectPeriodMonths(label) {
+  // Patterns we look for (Malay):
+  // "X Bulan Sebelum"  → single month offset
+  // "X–Y Bulan Sebelum" → range, use the larger (earlier) number
+  const single = label.match(/(\d+)\s+Bulan\s+Sebelum/i);
+  const range  = label.match(/(\d+)[–\-](\d+)\s+Bulan\s+Sebelum/i);
+  if (range) {
+    return { monthsBefore: parseInt(range[2]), monthsEnd: parseInt(range[1]) };
+    // e.g. "4–5 Bulan" → start = 5 months before, end = 4 months before
+  }
+  if (single) {
+    const m = parseInt(single[1]);
+    return { monthsBefore: m, monthsEnd: m };
+  }
+  // "Bulan Majlis" / "Bulan Pertunangan" / "Bulan Perkahwinan" → same month as event
+  if (/Bulan\s+(Majlis|Pertunangan|Perkahwinan|Kahwin)/i.test(label)) {
+    return { monthsBefore: 0, monthsEnd: 0 };
+  }
+  return null; // Can't auto-detect — leave label unchanged
+}
+
+function recalcPeriodLabels(phase, eventDate) {
+  phase.periods.forEach(function(period) {
+    const detected = detectPeriodMonths(period.label);
+    if (!detected) return; // Skip if we can't detect pattern
+
+    const { monthsBefore, monthsEnd } = detected;
+
+    // Calculate the month range
+    const startDate = addMonths(eventDate, -monthsBefore);
+    const endDate   = addMonths(eventDate, -monthsEnd);
+
+    // Build the new date range string
+    let dateRange;
+    if (monthsBefore === 0 && monthsEnd === 0) {
+      // Same month as event
+      dateRange = myMonthYear(eventDate);
+    } else {
+      dateRange = fmtRange(startDate, endDate);
+    }
+
+    // Build the suffix (preserve the "X Bulan Sebelum Tunang" part)
+    // Strip the old date prefix before the · and keep everything after
+    const dotIdx = period.label.indexOf('·');
+    let suffix = '';
+    if (dotIdx !== -1) {
+      suffix = period.label.substring(dotIdx); // keeps "· X Bulan Sebelum ..."
+    } else {
+      // No dot found — rebuild suffix from scratch using detected months
+      if (monthsBefore === 0) {
+        suffix = '· Bulan Majlis';
+      } else if (monthsBefore === monthsEnd) {
+        suffix = '· ' + monthsBefore + ' Bulan Sebelum';
+      } else {
+        suffix = '· ' + monthsEnd + '–' + monthsBefore + ' Bulan Sebelum';
+      }
+    }
+
+    period.label = dateRange + ' ' + suffix;
+  });
 }
 
 function updateCountdownLabels() {
